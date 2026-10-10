@@ -22,6 +22,9 @@ from detection.risk_classifier import RiskClassifier
 from detection.analyzer import AuditAnalyzer
 from utils.log_parser import LogParser, ParsingResult
 from utils.report_generator import ReportGenerator
+from utils.data_generator import AuditDataGenerator
+
+
 
 # -----------------------------------------------------------------------------
 # Streamlit Page Configuration & Dark Cybersecurity CSS Theme
@@ -220,15 +223,23 @@ st.sidebar.text(f"File: {st.session_state['active_file_name']}")
 st.sidebar.text(f"Events: {len(st.session_state['analyzed_df'])}")
 st.sidebar.text(f"Alerts: {len(st.session_state['alerts'])}")
 
-# Button to quickly reload sample logs
+# Buttons to quickly reload or generate fresh sample logs
 sample_csv_path = os.path.join(os.path.dirname(__file__), "data", "sample_audit_logs.csv")
 if os.path.exists(sample_csv_path):
-    if st.sidebar.button("🔄 Reload Sample Dataset", use_container_width=True):
+    if st.sidebar.button("🔄 Reload Base Sample", use_container_width=True):
         parsed = LogParser.parse_file(sample_csv_path, file_name="sample_audit_logs.csv")
         if parsed.is_valid:
             run_analysis_pipeline(parsed.df, "sample_audit_logs.csv")
             st.sidebar.success("Sample dataset reloaded!")
             st.rerun()
+
+if st.sidebar.button("🎲 Generate & Load Fresh Data", use_container_width=True, type="primary"):
+    fresh_df = AuditDataGenerator.generate_logs(num_events=25)
+    fresh_name = f"audit_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    run_analysis_pipeline(fresh_df, fresh_name)
+    st.sidebar.success("Generated & loaded fresh randomized dataset!")
+    st.rerun()
+
 
 st.sidebar.markdown(
     "<div style='margin-top: 25px; padding: 10px; background: #111827; border-radius: 6px; border: 1px solid #1f2937; font-size: 0.75rem; color: #94a3b8;'>"
@@ -453,39 +464,77 @@ elif nav_page == "📥 Upload Audit Logs":
     with sample_col:
         st.markdown(
             """<div class="cyber-card">
-                <h4 style="color: #38bdf8; margin-top: 0;">🧪 Test with Sample Logs</h4>
+                <h4 style="color: #38bdf8; margin-top: 0;">🎲 Generate Fresh Audit Datasets</h4>
                 <p style="font-size: 0.85rem; color: #94a3b8;">
-                    Download or immediately load our synthetic test suite containing legitimate actions alongside 
-                    scenarios for all 8 detection rules.
+                    Generate brand new, randomized datasets on demand with fresh timestamps, unique actors, 
+                    IPs, and diverse attack scenarios across all 8 detection rules.
                 </p>
             </div>""",
             unsafe_allow_html=True,
         )
 
-        sample_csv_path = os.path.join(os.path.dirname(__file__), "data", "sample_audit_logs.csv")
-        sample_json_path = os.path.join(os.path.dirname(__file__), "data", "sample_audit_logs.json")
+        # Initialize dynamic dataset in session_state if absent
+        if "dynamic_dataset" not in st.session_state:
+            st.session_state["dynamic_dataset"] = AuditDataGenerator.generate_logs(num_events=25)
+            st.session_state["dynamic_dataset_name"] = f"audit_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
-        if os.path.exists(sample_csv_path):
-            with open(sample_csv_path, "r", encoding="utf-8") as f:
-                csv_bytes = f.read().encode("utf-8")
-            st.download_button(
-                label="⬇️ Download Sample CSV",
-                data=csv_bytes,
-                file_name="sample_audit_logs.csv",
-                mime="text/csv",
-                use_container_width=True,
-            )
+        gen_size = st.select_slider(
+            "Events to Generate:",
+            options=[15, 25, 50, 100],
+            value=25,
+            key="gen_size_slider",
+        )
 
-        if os.path.exists(sample_json_path):
-            with open(sample_json_path, "r", encoding="utf-8") as f:
-                json_bytes = f.read().encode("utf-8")
-            st.download_button(
-                label="⬇️ Download Sample JSON",
-                data=json_bytes,
-                file_name="sample_audit_logs.json",
-                mime="application/json",
-                use_container_width=True,
-            )
+        col_g1, col_g2 = st.columns(2)
+        with col_g1:
+            if st.button("🎲 Generate New", type="secondary", use_container_width=True):
+                st.session_state["dynamic_dataset"] = AuditDataGenerator.generate_logs(num_events=gen_size)
+                st.session_state["dynamic_dataset_name"] = f"audit_logs_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                st.success(f"Generated {gen_size} fresh events!")
+
+        with col_g2:
+            if st.button("🚀 Load Directly", type="primary", use_container_width=True):
+                dyn_df = st.session_state["dynamic_dataset"]
+                file_name_run = f"{st.session_state.get('dynamic_dataset_name', 'fresh_logs')}.csv"
+                run_analysis_pipeline(dyn_df, file_name_run)
+                st.success("Fresh dataset loaded and analyzed!")
+                st.rerun()
+
+        # Dynamic dataset download options
+        dyn_df = st.session_state["dynamic_dataset"]
+        csv_bytes = dyn_df.to_csv(index=False).encode("utf-8")
+        json_bytes = dyn_df.to_json(orient="records", indent=2).encode("utf-8")
+        file_base = st.session_state.get("dynamic_dataset_name", "audit_logs")
+
+        st.download_button(
+            label="⬇️ Download Fresh CSV",
+            data=csv_bytes,
+            file_name=f"{file_base}.csv",
+            mime="text/csv",
+            use_container_width=True,
+        )
+
+        st.download_button(
+            label="⬇️ Download Fresh JSON",
+            data=json_bytes,
+            file_name=f"{file_base}.json",
+            mime="application/json",
+            use_container_width=True,
+        )
+
+        with st.expander("📁 Original Static Baseline Sample", expanded=False):
+            sample_csv_path = os.path.join(os.path.dirname(__file__), "data", "sample_audit_logs.csv")
+            if os.path.exists(sample_csv_path):
+                with open(sample_csv_path, "r", encoding="utf-8") as f:
+                    static_bytes = f.read().encode("utf-8")
+                st.download_button(
+                    label="⬇️ Download Static Base CSV",
+                    data=static_bytes,
+                    file_name="sample_audit_logs.csv",
+                    mime="text/csv",
+                    use_container_width=True,
+                )
+
 
     with upload_col:
         uploaded_file = st.file_uploader(

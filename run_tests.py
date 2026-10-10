@@ -14,8 +14,9 @@ if __name__ == "__main__":
     runner = unittest.TextTestRunner(verbosity=2)
     result = runner.run(suite)
     if not result.wasSuccessful():
-        print("\n❌ Tests failed!")
+        print("\n[FAIL] Tests failed!")
         sys.exit(1)
     else:
-        print(f"\n✅ All {result.testsRun} tests passed successfully!")
+        print(f"\n[PASS] All {result.testsRun} tests passed successfully!")
         sys.exit(0)
+
